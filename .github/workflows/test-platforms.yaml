@@ -1,0 +1,50 @@
+name: Test EOF fix across platforms
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    name: Build and run on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-26-intel, macos-26]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install coreutils
+
+      - name: Build irf
+        working-directory: src
+        run: |
+          make clean
+          make
+
+      - name: Create test sequence
+        run: |
+          printf '>test\nAGTCAGGCACCGTGTATGAAATCTAACAATGCGCTCATCGTCATCCTCGGCACCGTCACCCTGGATGCTGTAGGCATAGGCTTGGTTATGCCGGTACTGCCGGGCCTCTTGCGGGATATCGTCCATTCCGACAGCATCGCCAGTCACTATGGCGTGCTGCTAGCGCTATATGCGTTGATGCAATTTCTATGCGCACCCGTTCTCGGAGCACTGTCCGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGGAGCCACTATCGACTACGCGATCATGGCGACCACACCCGTCCTGTGGATCCTCTACGCC\n' > test.fa
+
+      - name: Run irf with a timeout (fails loudly instead of hanging forever)
+        run: |
+          TIMEOUT_CMD=timeout
+          command -v timeout >/dev/null 2>&1 || TIMEOUT_CMD=gtimeout
+
+          if "$TIMEOUT_CMD" 60 ./bin/irf.exe test.fa 2 10 10 80 10 20 10000 100 1; then
+            status=0
+          else
+            status=$?
+          fi
+
+          if [ "$status" -eq 124 ]; then
+            echo "::error::irf hung and was killed by timeout - fix did not work"
+            exit 1
+          fi
+          echo "irf completed with exit code $status (irf is known to exit 1 on success)"
